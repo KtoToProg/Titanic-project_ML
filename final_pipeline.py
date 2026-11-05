@@ -2,24 +2,18 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold, cross_val_score
-from sklearn.metrics import accuracy_score
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
 
 from xgboost import XGBClassifier
 
 train = pd.read_csv("data/train.csv")
 test  = pd.read_csv("data/test.csv")
-train.head()
 
 features = ['PassengerId', 'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'Cabin', 'Embarked']
 target = 'Survived'
 
-test['Fare'] = test['Fare'].fillna(test['Fare'].median())
-
 train_set = train[features + [target]].copy()
-test_set = test[features].copy()
 
 plt.figure(figsize=(13, 5))
 
@@ -37,9 +31,6 @@ plt.ylabel('Survival %')
 
 plt.tight_layout()
 plt.show()
-
-import numpy as np
-import pandas as pd
 
 
 def preprocess_fold(raw_train, raw_val=None, raw_test=None):
@@ -101,46 +92,16 @@ def preprocess_fold(raw_train, raw_val=None, raw_test=None):
         if d is None:
             result.append(None)
         else:
-            result.append(out[idx]);
+            result.append(out[idx])
             idx += 1
     return result[0], result[1], result[2]
 
 
-print("preprocess_fold (базовая)")
+print("preprocess_fold (baseline) is ready")
 _test = preprocess_fold(train.head(100), train.iloc[100:120], test)
-print(f"Признаков: {_test[0].shape[1]}")
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder
-
-drop_adv = ['PassengerId', 'Name', 'Ticket', 'Cabin']
-
-adv_train = train.drop(columns=['Survived'] + [c for c in drop_adv if c in train.columns]).copy()
-adv_test = test.drop(columns=[c for c in drop_adv if c in test.columns]).copy()
-adv_train['is_test'] = 0
-adv_test['is_test'] = 1
-adv = pd.concat([adv_train, adv_test], ignore_index=True)
-adv_y = adv.pop('is_test')
-
-for col in adv.select_dtypes(include='object').columns:
-    adv[col] = LabelEncoder().fit_transform(adv[col].astype(str))
-adv = adv.fillna(-1)
-
-clf = RandomForestClassifier(n_estimators=300, max_depth=5, random_state=42, n_jobs=-1)
-auc = cross_val_score(clf, adv, adv_y, cv=5, scoring='roc_auc').mean()
-print(f"Adversarial AUC (без ID): {auc:.4f}")
-
-if auc > 0.65:
-    print("Train и test РАЗНЫЕ по признакам. CV не отражает LB.")
-elif auc > 0.55:
-    print("Небольшое различие. CV приблизительно верна.")
-else:
-    print("Train и test похожи. Проблема в переобучении.")
-
-from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
-from sklearn.metrics import accuracy_score, roc_auc_score
-from xgboost import XGBClassifier
+assert _test[1] is not None and not _test[1].isna().any().any(), "NaN in val after preprocessing"
+assert list(_test[0].columns) == list(_test[1].columns), "train/val columns mismatch"
+print(f"Sanity check OK, {_test[0].shape[1]} features")
 
 y_all = train['Survived'].values
 groups_all = train['Name'].str.split(',').str[0].str.strip().values
@@ -158,12 +119,8 @@ def make_xgb(seed):
 def run_pseudo(global_seed, cv_type='stratified', n_iterations=2, verbose=False):
     if cv_type == 'stratified':
         skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=global_seed)
-        split_fn = lambda X, y: skf.split(X, y)
-        groups_aug_fn = None
     else:
         skf = StratifiedGroupKFold(n_splits=10, shuffle=True, random_state=global_seed)
-        split_fn = lambda X, y, groups: skf.split(X, y, groups=groups)
-        groups_aug_fn = True
 
     test_proba = np.zeros(len(test))
     oof = np.zeros(len(train))
@@ -216,12 +173,12 @@ def run_pseudo(global_seed, cv_type='stratified', n_iterations=2, verbose=False)
             test_proba_new += m.predict_proba(X_te_full)[:, 1] / skf.n_splits
         test_proba = test_proba_new
         if verbose:
-            print(f"  [{cv_type}] Seed {global_seed} iter {iteration}: уверенных={conf_mask.sum()}")
+            print(f"  [{cv_type}] Seed {global_seed} iter {iteration}: confident={conf_mask.sum()}")
 
     return test_proba, oof
 
 
-print("=== StratifiedKFold ===")
+print("\nStratifiedKFold")
 seeds = [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337]
 
 results_strat = [run_pseudo(s, cv_type='stratified', verbose=False) for s in seeds]
@@ -230,9 +187,9 @@ all_oofs_strat = [r[1] for r in results_strat]
 
 final_strat = np.mean(all_strat, axis=0)
 final_oof_strat = np.mean(all_oofs_strat, axis=0)
-print(f"Stratified готово")
+print("Stratified CV done")
 
-print("\n=== GroupKFold ===")
+print("\nGroupKFold")
 
 results_group = [run_pseudo(s, cv_type='group', verbose=False) for s in seeds]
 all_group = [r[0] for r in results_group]
@@ -240,14 +197,14 @@ all_oofs_group = [r[1] for r in results_group]
 
 final_group = np.mean(all_group, axis=0)
 final_oof_group = np.mean(all_oofs_group, axis=0)
-print(f"Group готово")
+print("Group CV done")
 
 final_proba = (final_strat + final_group) / 2
 y_pred = (final_proba >= 0.5).astype(int)
-print(f"\nИтог (blend): {np.bincount(y_pred)}")
+print(f"\nFinal blend result: {np.bincount(y_pred)}")
 
-print(f"\nОтдельно Strat: {np.bincount((final_strat >= 0.5).astype(int))}")
-print(f"Отдельно Group: {np.bincount((final_group >= 0.5).astype(int))}")
+print(f"Stratified only: {np.bincount((final_strat >= 0.5).astype(int))}")
+print(f"Group only: {np.bincount((final_group >= 0.5).astype(int))}")
 
 final_oof = (final_oof_strat + final_oof_group) / 2
 
@@ -256,21 +213,23 @@ submission = pd.DataFrame({
     'Survived': y_pred
 })
 
-from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
+# NOTE: OOF metrics are computed using the baseline model (iteration 0) to estimate generalization *prior* to pseudo-labeling.
+# Metrics for the final model on OOF are intentionally omitted: since pseudo-labels are derived from the test set,
+# any evaluation of the final model on the training data would be biased (data leakage).
+# The final model is evaluated using the Public LB as a secondary signal.
+
 oof_preds = (final_oof >= 0.5).astype(int)
 
-print("\n" + "="*40)
-print("📊 ИТОГОВЫЕ OOF МЕТРИКИ (Blend Strat+Group):")
+print("\nFinal OOF Metrics (Blend Strat+Group):")
 print(f"Accuracy:  {accuracy_score(y_all, oof_preds):.5f}")
 print(f"Precision: {precision_score(y_all, oof_preds):.5f}")
 print(f"Recall:    {recall_score(y_all, oof_preds):.5f}")
 print(f"F1-score:  {f1_score(y_all, oof_preds):.5f}")
 print(f"ROC-AUC:   {roc_auc_score(y_all, final_oof):.5f}")
-print("="*40 + "\n")
 
 submission.to_csv('submission.csv', index=False)
 
 sub_check = pd.read_csv('submission.csv')
-print(f"Строк: {len(sub_check)} | Уникальных ID: {sub_check['PassengerId'].nunique()}")
+print(f"\nRows: {len(sub_check)} | Unique IDs: {sub_check['PassengerId'].nunique()}")
 print(f"Min/Max: {sub_check['PassengerId'].min()}/{sub_check['PassengerId'].max()}")
-print(f"Распределение: {sub_check['Survived'].value_counts().to_dict()}")
+print(f"Class distribution: {sub_check['Survived'].value_counts().to_dict()}")

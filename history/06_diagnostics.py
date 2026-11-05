@@ -1,15 +1,12 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.metrics import (accuracy_score, precision_score, recall_score,
-                             roc_auc_score, confusion_matrix, ConfusionMatrixDisplay)
-from sklearn.pipeline import Pipeline
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, roc_auc_score, f1_score)
+
+from xgboost import XGBClassifier
 
 import os
 
@@ -19,18 +16,13 @@ for dirname, _, filenames in os.walk('/kaggle/input'):
 
 train = pd.read_csv("../data/train.csv")
 test  = pd.read_csv("../data/test.csv")
-train.head()
 
-features = ['PassengerId', 'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'Cabin', 'Embarked']
-target = 'Survived'
+
+
 
 test['Fare'] = test['Fare'].fillna(test['Fare'].median())
 
-train_set = train[features + [target]].copy()
-test_set = test[features].copy()
 
-import numpy as np
-import pandas as pd
 
 
 def preprocess_fold(raw_train, raw_val=None, raw_test=None):
@@ -44,7 +36,7 @@ def preprocess_fold(raw_train, raw_val=None, raw_test=None):
                      'Capt': 'Rare', 'Sir': 'Rare'}
         d['Title'] = d['Title'].map(title_map).fillna('Rare')
         d['FamilySize'] = d['SibSp'] + d['Parch'] + 1
-        d['IsAlone'] = (d['FamilySize'] == 1).astype(int)  # ✅ на месте
+        d['IsAlone'] = (d['FamilySize'] == 1).astype(int)
         d['HasCabin'] = d['Cabin'].notna().astype(int)
         d['Sex'] = d['Sex'].map({'male': 0, 'female': 1})
         return d
@@ -92,19 +84,15 @@ def preprocess_fold(raw_train, raw_val=None, raw_test=None):
         if d is None:
             result.append(None)
         else:
-            result.append(out[idx]);
+            result.append(out[idx])
             idx += 1
     return result[0], result[1], result[2]
 
 
-print("✅ preprocess_fold — БАЗОВАЯ версия (0.79665)")
+print("Preprocess fold - baseline version (0.79665)")
 _test = preprocess_fold(train.head(100), train.iloc[100:120], test)
-print(f"Признаков: {_test[0].shape[1]}")
-print(f"Колонки: {list(_test[0].columns)}")
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder
+print(f"Features: {_test[0].shape[1]}")
+print(f"Features: {list(_test[0].columns)}")
 
 drop_adv = ['PassengerId', 'Name', 'Ticket', 'Cabin']
 
@@ -121,18 +109,14 @@ adv = adv.fillna(-1)
 
 clf = RandomForestClassifier(n_estimators=300, max_depth=5, random_state=42, n_jobs=-1)
 auc = cross_val_score(clf, adv, adv_y, cv=5, scoring='roc_auc').mean()
-print(f"Adversarial AUC (без ID): {auc:.4f}")
+print(f"Adversarial AUC: {auc:.4f}")
 
 if auc > 0.65:
-    print("Train и test РАЗНЫЕ по признакам. CV не отражает LB.")
+    print("Train and test are DIFFERENT. CV does not reflect LB.")
 elif auc > 0.55:
-    print("Небольшое различие. CV приблизительно верна.")
+    print("Slight difference. CV is approximately correct.")
 else:
-    print("Train и test похожи. Проблема в переобучении.")
-
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import accuracy_score, roc_auc_score
-from xgboost import XGBClassifier
+    print("Train and test are similar. Issue is overfitting.")
 
 y_all = train['Survived'].values
 
@@ -189,31 +173,29 @@ def run_pseudo(global_seed, n_iterations=2, verbose=False):
             test_proba_new += m.predict_proba(X_te_full)[:, 1] / skf.n_splits
         test_proba = test_proba_new
         if verbose:
-            print(f"  Seed {global_seed} iter {iteration}: уверенных={conf_mask.sum()}")
+            print(f"  Seed {global_seed} iter {iteration}: confident={conf_mask.sum()}")
 
     return test_proba, oof
 
 
 SEED_SET = 1
 seed_sets = {
-    1: [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337],  # baseline (0.79665)
-    2: [11, 22, 33, 44, 55, 66, 77, 88, 99, 100],  # другие seed'ы
+    1: [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337],
+    2: [11, 22, 33, 44, 55, 66, 77, 88, 99, 100],
     3: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],  # ещё
     4: [500, 501, 502, 503, 504, 505, 506, 507, 508, 509],
     5: [9, 18, 27, 36, 45, 54, 63, 72, 81, 90],
 }
 seeds = seed_sets[SEED_SET]
 
-print(f"=== XGB × 10 seed (SET {SEED_SET}) ===")
-results = [run_pseudo(s, n_iterations=2, verbose=False) for s in seeds]
+print(f"\nXGB × 10 seed (SET {SEED_SET}):")
+results = [run_pseudo(s, n_iterations=2, verbose=True) for s in seeds]
 all_test = [r[0] for r in results]
 all_oofs = [r[1] for r in results]
 
 final_proba = np.mean(all_test, axis=0)
 y_pred = (final_proba >= 0.5).astype(int)
-print(f"\nИтог: {np.bincount(y_pred)}")
-
-from xgboost import XGBClassifier
+print(f"\nResult: {np.bincount(y_pred)}")
 
 raw_tr = train.iloc[:700].reset_index(drop=True)
 raw_va = train.iloc[700:].reset_index(drop=True)
@@ -229,7 +211,6 @@ m_diag = XGBClassifier(
     random_state=42, eval_metric='logloss', verbosity=0)
 m_diag.fit(X_diag, y_diag)
 
-import pandas as pd
 
 imp = pd.Series(m_diag.feature_importances_, index=X_diag.columns).sort_values()
 print(imp)
@@ -239,21 +220,19 @@ submission = pd.DataFrame({
     'Survived': y_pred
 })
 
-from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
 final_oof = np.mean(all_oofs, axis=0)
 oof_preds = (final_oof >= 0.5).astype(int)
-print("\n" + "="*40)
-print("📊 ИТОГОВЫЕ OOF МЕТРИКИ:")
+
+print("\nFinal OOF Metrics:")
 print(f"Accuracy:  {accuracy_score(y_all, oof_preds):.5f}")
 print(f"Precision: {precision_score(y_all, oof_preds):.5f}")
 print(f"Recall:    {recall_score(y_all, oof_preds):.5f}")
 print(f"F1-score:  {f1_score(y_all, oof_preds):.5f}")
 print(f"ROC-AUC:   {roc_auc_score(y_all, final_oof):.5f}")
-print("="*40 + "\n")
 
-submission.to_csv('submission_history.csv', index=False)
+submission.to_csv('submissions/submission_history.csv', index=False)
 
-sub_check = pd.read_csv('submission_history.csv')
-print(f"Строк: {len(sub_check)} | Уникальных ID: {sub_check['PassengerId'].nunique()}")
+sub_check = pd.read_csv('submissions/submission_history.csv')
+print(f"\nRows: {len(sub_check)} | Unique IDs: {sub_check['PassengerId'].nunique()}")
 print(f"Min/Max: {sub_check['PassengerId'].min()}/{sub_check['PassengerId'].max()}")
-print(f"Распределение: {sub_check['Survived'].value_counts().to_dict()}")
+print(f"Distribution: {sub_check['Survived'].value_counts().to_dict()}")
