@@ -19,11 +19,7 @@ train = pd.read_csv("../data/train.csv")
 test  = pd.read_csv("../data/test.csv")
 
 
-
-
 test['Fare'] = test['Fare'].fillna(test['Fare'].median())
-
-
 
 
 def preprocess_fold(raw_train, raw_val=None, raw_test=None):
@@ -181,7 +177,7 @@ def run_pseudo(global_seed, n_iterations=2, verbose=False):
     return test_proba, oof
 
 
-print("\nSingle XGB + Pseudo-Labeling (5 seeds):")
+print("\nSingle XGB + Pseudo-Labeling:")
 seeds = [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337,
          888, 111, 2025, 3141, 777, 13, 100, 500, 900, 2000, 2100]
 results = [run_pseudo(s, n_iterations=2, verbose=True) for s in seeds]

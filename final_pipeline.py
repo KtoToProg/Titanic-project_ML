@@ -2,13 +2,17 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold, cross_val_score
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 
 from xgboost import XGBClassifier
 
 train = pd.read_csv("data/train.csv")
 test  = pd.read_csv("data/test.csv")
+
+test['Fare'] = test['Fare'].fillna(test['Fare'].median())
 
 features = ['PassengerId', 'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'Cabin', 'Embarked']
 target = 'Survived'
@@ -102,6 +106,23 @@ _test = preprocess_fold(train.head(100), train.iloc[100:120], test)
 assert _test[1] is not None and not _test[1].isna().any().any(), "NaN in val after preprocessing"
 assert list(_test[0].columns) == list(_test[1].columns), "train/val columns mismatch"
 print(f"Sanity check OK, {_test[0].shape[1]} features")
+
+
+drop_adv = ['PassengerId', 'Name', 'Ticket', 'Cabin']
+adv_train = train.drop(columns=['Survived'] + [c for c in drop_adv if c in train.columns]).copy()
+adv_test = test.drop(columns=[c for c in drop_adv if c in test.columns]).copy()
+adv_train['is_test'] = 0
+adv_test['is_test'] = 1
+adv = pd.concat([adv_train, adv_test], ignore_index=True)
+adv_y = adv.pop('is_test')
+
+for col in adv.select_dtypes(include='object').columns:
+    adv[col] = LabelEncoder().fit_transform(adv[col].astype(str))
+adv = adv.fillna(-1)
+
+clf = RandomForestClassifier(n_estimators=300, max_depth=5, random_state=42, n_jobs=-1)
+auc = cross_val_score(clf, adv, adv_y, cv=5, scoring='roc_auc').mean()
+print(f"Adversarial AUC: {auc:.4f}  (0.5 = identical, >0.65 = shift)")
 
 y_all = train['Survived'].values
 groups_all = train['Name'].str.split(',').str[0].str.strip().values

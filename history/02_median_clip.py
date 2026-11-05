@@ -18,11 +18,7 @@ for dirname, _, filenames in os.walk('/kaggle/input'):
 train = pd.read_csv("../data/train.csv")
 test  = pd.read_csv("../data/test.csv")
 
-
-
 test['Fare'] = test['Fare'].fillna(test['Fare'].median())
-
-
 
 
 def preprocess_fold(raw_train, raw_val=None, raw_test=None):

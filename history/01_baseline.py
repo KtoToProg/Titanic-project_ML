@@ -178,11 +178,6 @@ submission = pd.DataFrame({
 
 final_oof = np.mean(all_oofs, axis=0)
 
-# NOTE: OOF metrics are computed using the baseline model (iteration 0) to estimate generalization *prior* to pseudo-labeling.
-# Metrics for the final model on OOF are intentionally omitted: since pseudo-labels are derived from the test set,
-# any evaluation of the final model on the training data would be biased (data leakage).
-# The final model is evaluated using the Public LB as a secondary signal.
-
 oof_preds = (final_oof >= 0.5).astype(int)
 
 print("FINAL OOF METRICS (averaged over seeds):")

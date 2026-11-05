@@ -18,11 +18,7 @@ train = pd.read_csv("../data/train.csv")
 test  = pd.read_csv("../data/test.csv")
 
 
-
-
 test['Fare'] = test['Fare'].fillna(test['Fare'].median())
-
-
 
 
 def preprocess_fold(raw_train, raw_val=None, raw_test=None):
@@ -182,7 +178,7 @@ SEED_SET = 1
 seed_sets = {
     1: [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337],
     2: [11, 22, 33, 44, 55, 66, 77, 88, 99, 100],
-    3: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],  # ещё
+    3: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     4: [500, 501, 502, 503, 504, 505, 506, 507, 508, 509],
     5: [9, 18, 27, 36, 45, 54, 63, 72, 81, 90],
 }
