@@ -218,18 +218,28 @@ def run_pseudo(global_seed, cv_type='stratified', n_iterations=2, verbose=False)
         if verbose:
             print(f"  [{cv_type}] Seed {global_seed} iter {iteration}: уверенных={conf_mask.sum()}")
 
-    return test_proba
+    return test_proba, oof
 
 
 print("=== StratifiedKFold ===")
 seeds = [42, 123, 2024, 7, 99, 555, 314, 2718, 1000, 1337]
-all_strat = [run_pseudo(s, cv_type='stratified', verbose=False) for s in seeds]
+
+results_strat = [run_pseudo(s, cv_type='stratified', verbose=False) for s in seeds]
+all_strat = [r[0] for r in results_strat]
+all_oofs_strat = [r[1] for r in results_strat]
+
 final_strat = np.mean(all_strat, axis=0)
+final_oof_strat = np.mean(all_oofs_strat, axis=0)
 print(f"Stratified готово")
 
 print("\n=== GroupKFold ===")
-all_group = [run_pseudo(s, cv_type='group', verbose=False) for s in seeds]
+
+results_group = [run_pseudo(s, cv_type='group', verbose=False) for s in seeds]
+all_group = [r[0] for r in results_group]
+all_oofs_group = [r[1] for r in results_group]
+
 final_group = np.mean(all_group, axis=0)
+final_oof_group = np.mean(all_oofs_group, axis=0)
 print(f"Group готово")
 
 final_proba = (final_strat + final_group) / 2
@@ -239,10 +249,25 @@ print(f"\nИтог (blend): {np.bincount(y_pred)}")
 print(f"\nОтдельно Strat: {np.bincount((final_strat >= 0.5).astype(int))}")
 print(f"Отдельно Group: {np.bincount((final_group >= 0.5).astype(int))}")
 
+final_oof = (final_oof_strat + final_oof_group) / 2
+
 submission = pd.DataFrame({
     'PassengerId': test['PassengerId'].values,
     'Survived': y_pred
 })
+
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
+oof_preds = (final_oof >= 0.5).astype(int)
+
+print("\n" + "="*40)
+print("📊 ИТОГОВЫЕ OOF МЕТРИКИ (Blend Strat+Group):")
+print(f"Accuracy:  {accuracy_score(y_all, oof_preds):.5f}")
+print(f"Precision: {precision_score(y_all, oof_preds):.5f}")
+print(f"Recall:    {recall_score(y_all, oof_preds):.5f}")
+print(f"F1-score:  {f1_score(y_all, oof_preds):.5f}")
+print(f"ROC-AUC:   {roc_auc_score(y_all, final_oof):.5f}")
+print("="*40 + "\n")
+
 submission.to_csv('submission.csv', index=False)
 
 sub_check = pd.read_csv('submission.csv')
