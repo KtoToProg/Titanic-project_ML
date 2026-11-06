@@ -125,7 +125,7 @@ def make_xgb(seed):
         random_state=seed, eval_metric='logloss', verbosity=0)
 
 
-def run_pseudo(global_seed, n_iterations=3, verbose=False):
+def run_pseudo(global_seed, n_iterations=2, verbose=False):
     skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=global_seed)
 
     test_proba = np.zeros(len(test))
