@@ -1,3 +1,205 @@
+<a id="english-version"></a>
+🇬🇧 **English Version**
+
+👉 [Перейти к русской версии / Jump to Russian version](#russian-version)  
+*(Русская версия находится ниже / Russian version is below)*
+
+---
+
+# Titanic: a mini-experiment with pseudo-labeling and grouped CV
+
+A small learning project on Kaggle Titanic. The goal was not to squeeze the maximum out of Public LB, but to build a tidy pipeline: meaningful features, pseudo-labels, honest validation, and a clear experiment structure.
+
+## 1. Data and features
+
+The task is to predict `Survived`: 0 — passenger died, 1 — survived.
+
+Data:
+- `train.csv` — 891 rows;
+- `test.csv` — 418 rows.
+
+What stands out right away:
+- sex is the strongest feature: women survived about 74% of the time, men — 18%;
+- class matters too: 1st class — about 63% survivors, 3rd — about 24%;
+- age is useful, but there are about 20% missing values;
+- `Fare` has a long right tail;
+- `Cabin` is missing for 77%, but the mere fact that a cabin is listed already says something about status.
+
+![EDA: survival by sex and class](images/eda_plot.png)
+
+*Survival by sex and ticket class. The gap between sexes is larger than between classes.*
+
+What I did with the features:
+
+- Extracted the title from `Name` with the regex `r' ([A-Za-z]+)\.'`. Kept `Mr`, `Mrs`, `Miss`, `Master`, merged the rest into `Rare`.
+- Filled missing `Age` not with the global median, but with the median per `Title + Pclass` pair. That way the age of a 1st-class `Mrs` and a 3rd-class `Mr` don't get mixed up.
+- Family features: `FamilySize = SibSp + Parch + 1` and `IsAlone` (1 if the passenger is travelling alone).
+- Log-transformed `Fare`: `LogFare = np.log1p(Fare)`.
+- Turned `Cabin` into a binary `HasCabin`. Dropped the cabin number itself — too many unique values.
+
+## 2. Model
+
+The base is `XGBClassifier`. I tuned the parameters for stability on a small dataset, not for maximum LB:
+
+```python
+n_estimators=600
+max_depth=3
+learning_rate=0.02
+subsample=0.75
+colsample_bytree=0.65
+```
+
+I limited the depth so the model doesn't memorize noise. `learning_rate` is low, the number of trees is high.
+
+## 3. Pseudo-labels
+
+The test set can be used too, but carefully. The scheme is:
+
+1. Train the model on train.
+2. Predict probabilities on test.
+3. Take the objects where the model is confident: `p > 0.90` or `p < 0.10`.
+4. Add them to train with pseudo-labels.
+5. Retrain the model.
+
+I did exactly 2 iterations. More is worse: the model starts confirming its own mistakes — confirmation bias.
+
+## 4. Validation and post-processing
+
+Titanic has an unpleasant quirk: families often survived or died together. If relatives end up in both the train fold and the validation fold, the model is effectively peeking.
+
+I compared two strategies:
+- `StratifiedKFold(n_splits=10)` — the usual stratification by class;
+- `StratifiedGroupKFold(n_splits=10)` — grouping by surname.
+
+In the second case, all family members end up in only one fold. That's more honest.
+
+Post-processing at the end:
+- probability clipping `clip(0.02, 0.98)`;
+- averaging snapshots at 400, 500, and 600 trees;
+- blending between the `StratifiedKFold` and `GroupKFold` models.
+
+Clipping removes the overconfident 0s and 1s. Snapshots smooth out the variance. Blending reduces dependence on a particular split.
+
+## 5. Experiments
+
+All versions live in `history/`.
+
+| File | What changed | OOF Acc | OOF ROC-AUC | 0/1 |
+|---|---|---|---|---|
+| `01_baseline.py` | Base, 10 seeds, mean | 0.82155 | 0.86963 | 266 / 152 |
+| `02_median_clip.py` | Median over seeds + clipping | 0.82155 | 0.86963 | 265 / 153 |
+| `03_snapshots_21seeds.py` | 21 seeds + snapshots | 0.82379 | 0.86994 | 266 / 152 |
+| `04_13seeds.py` | 13 seeds, no snapshots | 0.82379 | 0.87010 | 268 / 150 |
+| `05_final_pipeline.py` | Blend of KFold + GroupKFold | **0.82716** | 0.86642 | 265 / 153 |
+| `06_diagnostics.py` | Clone of base for Feature Importance | 0.82155 | 0.86963 | 266 / 152 |
+
+Briefly on each iteration:
+
+1. `01` — starting point. Clear what we're starting from.
+2. `02` — median and clipping changed the prediction for exactly one passenger. Accuracy didn't change.
+3. `03` — more seeds and snapshots gave a small boost.
+4. `04` — fewer seeds, no snapshots. Same Accuracy, slightly higher ROC-AUC.
+5. `05` — added honest validation by surname and blending. Best OOF Accuracy.
+6. `06` — diagnostics, doesn't affect predictions.
+
+## 6. Why Public LB is identical and what GroupKFold gives
+
+All iterations produced Public LB `0.79665`. Not because the pipeline didn't change — the test set is just small, 418 objects. The Accuracy step:
+
+```text
+1 / 418 ≈ 0.00239
+```
+
+Different versions predicted between 150 and 153 survivors. A difference of 1–2 people doesn't cross the LB rounding boundary. Conclusion: on Titanic, Public LB is noisy, and for model selection it's better to look at OOF, where there are 891 objects.
+
+The submission files themselves are in [`history/submissions/`](history/submissions/) — they show that the versions differ by 1–2 passengers.
+
+After switching to `GroupKFold`, ROC-AUC dropped and Accuracy went up. That's normal: the model is no longer peeking at families. The probabilities become less confident, so AUC goes down. But the binary decisions become more accurate, so Accuracy goes up. That is, the final model is less pretty in terms of probabilities, but more honest in terms of decisions.
+
+## 7. Feature importance
+
+Top features per `06_diagnostics.py`:
+
+| Feature | Weight |
+|---|---|
+| `Sex` | 0.336 |
+| `Title_Mr` | 0.215 |
+| `Title_Master` | 0.077 |
+| `Pclass` | 0.076 |
+| `HasCabin` | 0.057 |
+
+`Title_Rare` got a weight of 0.000. The group is too small and heterogeneous: priests, doctors, aristocrats. There's no stable pattern in it.
+
+![Feature importance, part 1](images/feature_importance.png)
+![Feature importance, part 2](images/feature_importance2.png)
+
+## 8. On OOF and leakage
+
+The OOF metrics in the table refer to the base architectures. I deliberately don't evaluate the final model with pseudo-labels via OOF.
+
+The reason is simple: pseudo-labels come from test. If you add them to train and then validate on train folds, you get leakage. The metric becomes inflated and useless. So I use OOF to compare base approaches, and the final reference is Public LB.
+
+## 9. Repository structure
+
+```text
+Titanic-project_ML/
+├── data/
+│   ├── train.csv                       # training set (891 rows, with labels)
+│   └── test.csv                        # test set (418 rows, no labels)
+├── history/
+│   ├── submissions/                    # CSV submissions for each of the 6 versions
+│   ├── 01_baseline.py                  # starting model: 10 seeds, mean averaging
+│   ├── 02_median_clip.py               # median over seeds + clipping [0.02, 0.98]
+│   ├── 03_snapshots_21seeds.py         # 21 seeds + snapshots at 400/500/600 trees
+│   ├── 04_13seeds.py                   # 13 seeds, no snapshots (speed check)
+│   ├── 05_final_pipeline.py            # blend of StratifiedKFold + GroupKFold (best OOF Acc)
+│   └── 06_diagnostics.py               # clone of 01_baseline for Feature Importance
+├── images/
+│   ├── eda_plot.png                    # survival chart by sex and class
+│   ├── feature_importance.png          # feature weights from XGBoost, part 1
+│   └── feature_importance2.png         # feature weights from XGBoost, part 2
+├── final_pipeline.py                   # local version with assert checks and leakage protection
+├── submission.csv                      # reference submission (output of final_pipeline.py)
+├── requirements.txt                    # pinned library versions
+├── README.md                           # project description (this file)
+└── LICENSE                             # MIT
+```
+
+`history/05_final_pipeline.py` — the archived Kaggle version.  
+`final_pipeline.py` — the local version with data checks and leakage protection.
+
+## 10. How to run
+
+```bash
+pip install -r requirements.txt
+python final_pipeline.py
+```
+
+The output will be `submission.csv`. It should match the reference file in the root.
+
+## 11. Limitations
+
+There's little data: 891 objects, so the metrics are noisy.
+
+Adversarial validation gave an AUC of about `0.5296`. That means train and test are similar. The main problem is overfitting, not distribution shift.
+
+Public LB on Titanic is too coarse. If you optimize only for it, it's easy to overfit to the test set.
+
+## Summary
+
+In the end, a small learning pipeline came together:
+- features are built with meaning, not just "add everything";
+- pseudo-labels are used sparingly, 2 iterations;
+- validation by surname protects against peeking at families;
+- blending and clipping reduce variance;
+- experiment results are saved and reproducible.
+
+The best OOF Accuracy is `0.82716` for version `05_final_pipeline.py`. Public LB is identical for all versions, but that's a limitation of the metric, not an absence of changes.
+
+
+---
+
+
 # Titanic: мини-эксперимент с pseudo-labeling и групповой CV
 
 Небольшой учебный проект по Kaggle Titanic. Цель была не выбить максимум Public LB, а собрать аккуратный пайплайн: осмысленные признаки, псевдо-метки, честная валидация и понятная структура экспериментов.
@@ -148,7 +350,8 @@ Titanic-project_ML/
 │   └── 06_diagnostics.py               # клон 01_baseline для Feature Importance
 ├── images/
 │   ├── eda_plot.png                    # график выживаемости по полу и классу
-│   └── feature_importance.png          # веса признаков из XGBoost
+│   ├── feature_importance.png          # важность признаков из XGBoost, часть 1
+│   └── feature_importance2.png         # важность признаков из XGBoost, часть 2
 ├── final_pipeline.py                   # локальная версия с assert-проверками и защитой от утечки
 ├── submission.csv                      # эталонный сабмит (результат final_pipeline.py)
 ├── requirements.txt                    # зафиксированные версии библиотек
