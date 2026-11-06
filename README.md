@@ -122,7 +122,7 @@ colsample_bytree=0.65
 
 `Title_Rare` получил вес 0.000. Группа слишком маленькая и разнородная: священники, врачи, аристократы. Устойчивой закономерности там нет.
 
-![Важность всех признаков по XGBoost](images/feature_importance.png)
+![Важность всех признаков по XGBoost](images/feature_importance.png)[](images/feature_importance2.png)
 
 ## 8. Про OOF и утечку
 
