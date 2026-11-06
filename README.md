@@ -10,6 +10,20 @@
 
 A small learning project on Kaggle Titanic. The goal was not to squeeze the maximum out of Public LB, but to build a tidy pipeline: meaningful features, pseudo-labels, honest validation, and a clear experiment structure.
 
+## Table of Contents
+- [1. Data and features](#1-data-and-features)
+- [2. Model](#2-model)
+- [3. Pseudo-labels](#3-pseudo-labels)
+- [4. Validation and post-processing](#4-validation-and-post-processing)
+- [5. Experiments](#5-experiments)
+- [6. Why Public LB is identical and what GroupKFold gives](#6-why-public-lb-is-identical-and-what-groupkfold-gives)
+- [7. Feature importance](#7-feature-importance)
+- [8. On OOF and leakage](#8-on-oof-and-leakage)
+- [9. Repository structure](#9-repository-structure)
+- [10. How to run](#10-how-to-run)
+- [11. Limitations](#11-limitations)
+- [Summary](#summary)
+
 ## 1. Data and features
 
 The task is to predict `Survived`: 0 — passenger died, 1 — survived.
@@ -199,6 +213,7 @@ The best OOF Accuracy is `0.82716` for version `05_final_pipeline.py`. Public LB
 
 ---
 
+
 <a id="russian-version"></a>
 **Русская версия**
 
@@ -207,6 +222,20 @@ The best OOF Accuracy is `0.82716` for version `05_final_pipeline.py`. Public LB
 # Titanic: мини-эксперимент с pseudo-labeling и групповой CV
 
 Небольшой учебный проект по Kaggle Titanic. Цель была не выбить максимум Public LB, а собрать аккуратный пайплайн: осмысленные признаки, псевдо-метки, честная валидация и понятная структура экспериментов.
+
+## Оглавление
+- [1. Данные и признаки](#1-данные-и-признаки)
+- [2. Модель](#2-модель)
+- [3. Псевдо-метки](#3-псевдо-метки)
+- [4. Валидация и пост-обработка](#4-валидация-и-пост-обработка)
+- [5. Эксперименты](#5-эксперименты)
+- [6. Почему Public LB одинаковый и что даёт GroupKFold](#6-почему-public-lb-одинаковый-и-что-даёт-groupkfold)
+- [7. Важность признаков](#7-важность-признаков)
+- [8. Про OOF и утечку](#8-про-oof-и-утечку)
+- [9. Структура репозитория](#9-структура-репозитория)
+- [10. Как запустить](#10-как-запустить)
+- [11. Ограничения](#11-ограничения)
+- [Итог](#итог)
 
 ## 1. Данные и признаки
 
