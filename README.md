@@ -1,10 +1,8 @@
 <a id="english-version"></a>
-🇬🇧 **English Version**
+**English Version**
 
 👉 [Перейти к русской версии / Jump to Russian version](#russian-version)  
 *(Русская версия находится ниже / Russian version is below)*
-
----
 
 # Titanic: a mini-experiment with pseudo-labeling and grouped CV
 
