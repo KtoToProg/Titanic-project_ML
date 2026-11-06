@@ -4,6 +4,8 @@
 👉 [Перейти к русской версии / Jump to Russian version](#russian-version)  
 *(Русская версия находится ниже / Russian version is below)*
 
+---
+
 # Titanic: a mini-experiment with pseudo-labeling and grouped CV
 
 A small learning project on Kaggle Titanic. The goal was not to squeeze the maximum out of Public LB, but to build a tidy pipeline: meaningful features, pseudo-labels, honest validation, and a clear experiment structure.
@@ -197,6 +199,10 @@ The best OOF Accuracy is `0.82716` for version `05_final_pipeline.py`. Public LB
 
 ---
 
+<a id="russian-version"></a>
+**Русская версия**
+
+👉 [Jump to English version / Перейти к английской версии](#english-version)
 
 # Titanic: мини-эксперимент с pseudo-labeling и групповой CV
 
